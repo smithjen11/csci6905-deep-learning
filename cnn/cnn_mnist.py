@@ -174,7 +174,6 @@ def load_eval_data(data_directory):
 
 def main(unused_argv):
   # Load training and eval data
-  # mnist = tf.contrib.learn.datasets.load_dataset("mnist")
   data_directory = os.path.join(ROOT_PATH, "101_ObjectCategories")
   
   ## Training data
@@ -193,10 +192,8 @@ def main(unused_argv):
   # Resize images
   eval_images28 = [transform.resize(image, (28, 28, 3)) for image in eval_images]
   eval_images28 = np.array(eval_images28, dtype=np.float32)
-  # train_labels = np.arange(start=0, stop=len(set(labels)), dtype=np.int32)
   eval_data = eval_images28  # Returns np.array
   eval_labels = np.asarray(eval_labels, dtype=np.int32)
-  # eval_labels = np.arange(start=0, stop=len(set(labels)), dtype=np.int32)
 
   # Create the Estimator
   classifier = tf.estimator.Estimator(
@@ -217,7 +214,7 @@ def main(unused_argv):
       shuffle=True)
   classifier.train(
       input_fn=train_input_fn,
-      steps=200,
+      steps=20000,
       hooks=[logging_hook])
 
   # Evaluate the model and print results
