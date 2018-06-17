@@ -1,18 +1,3 @@
-#  Copyright 2016 The TensorFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-"""Example of Estimator for DNN-based text classification with DBpedia data."""
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -20,6 +5,7 @@ from __future__ import print_function
 import argparse
 import sys
 
+import os
 import numpy as np
 import pandas
 from sklearn import metrics
@@ -27,16 +13,18 @@ import tensorflow as tf
 
 FLAGS = None
 
-MAX_DOCUMENT_LENGTH = 10
+MAX_DOCUMENT_LENGTH = 100
 EMBEDDING_SIZE = 50
 n_words = 0
-MAX_LABEL = 15
+MAX_LABEL = 20
 WORDS_FEATURE = 'words'  # Name of the input words feature.
+ROOT_PATH = "/vagrant"
 
 
 def estimator_spec_for_softmax_classification(logits, labels, mode):
   """Returns EstimatorSpec instance for softmax classification."""
   predicted_classes = tf.argmax(logits, 1)
+
   if mode == tf.estimator.ModeKeys.PREDICT:
     return tf.estimator.EstimatorSpec(
         mode=mode,
@@ -46,6 +34,7 @@ def estimator_spec_for_softmax_classification(logits, labels, mode):
         })
 
   loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
+
   if mode == tf.estimator.ModeKeys.TRAIN:
     optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
     train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
@@ -55,22 +44,9 @@ def estimator_spec_for_softmax_classification(logits, labels, mode):
       'accuracy':
           tf.metrics.accuracy(labels=labels, predictions=predicted_classes)
   }
+
   return tf.estimator.EstimatorSpec(
       mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
-
-
-def bag_of_words_model(features, labels, mode):
-  """A bag-of-words model. Note it disregards the word order in the text."""
-  bow_column = tf.feature_column.categorical_column_with_identity(
-      WORDS_FEATURE, num_buckets=n_words)
-  bow_embedding_column = tf.feature_column.embedding_column(
-      bow_column, dimension=EMBEDDING_SIZE)
-  bow = tf.feature_column.input_layer(
-      features, feature_columns=[bow_embedding_column])
-  logits = tf.layers.dense(bow, MAX_LABEL, activation=None)
-
-  return estimator_spec_for_softmax_classification(
-      logits=logits, labels=labels, mode=mode)
 
 
 def rnn_model(features, labels, mode):
@@ -97,21 +73,50 @@ def rnn_model(features, labels, mode):
   # neural network of last step) and pass it as features for softmax
   # classification over output classes.
   logits = tf.layers.dense(encoding, MAX_LABEL, activation=None)
+
   return estimator_spec_for_softmax_classification(
       logits=logits, labels=labels, mode=mode)
+
+
+def load_data(data_directory, state):
+  data_path = os.path.join(data_directory, '20news-bydate-'+state)
+
+  directories = [d for d in os.listdir(data_path) 
+               if os.path.isdir(os.path.join(data_path, d))]
+  
+  target = []
+  data = []
+  count = 0
+
+  for d in directories:
+    target_directory = os.path.join(data_path, d)
+    file_names = [os.path.join(target_directory, f) 
+                  for f in os.listdir(target_directory)]
+
+    for f in file_names:
+      data.append(open(f, encoding="utf8", errors='ignore').read().replace("\n", ' '))
+      target.append(count)
+
+    count = count + 1
+
+  return data, target
 
 
 def main(unused_argv):
   global n_words
   tf.logging.set_verbosity(tf.logging.INFO)
 
+  data_directory = os.path.join(ROOT_PATH, "20news-bydate")
+
   # Prepare training and testing data
-  dbpedia = tf.contrib.learn.datasets.load_dataset(
-      'dbpedia', test_with_fake_data=FLAGS.test_with_fake_data)
-  x_train = pandas.Series(dbpedia.train.data[:, 1])
-  y_train = pandas.Series(dbpedia.train.target)
-  x_test = pandas.Series(dbpedia.test.data[:, 1])
-  y_test = pandas.Series(dbpedia.test.target)
+  train_data, train_target = load_data(data_directory, 'train')
+  test_data, test_target = load_data(data_directory, 'test')
+  # newsgroups = tf.contrib.learn.datasets.load_dataset(
+  #     'dbpedia', test_with_fake_data=FLAGS.test_with_fake_data)
+  x_train = pandas.Series(train_data)
+  y_train = pandas.Series(train_target)
+  x_test = pandas.Series(test_data)
+  y_test = pandas.Series(test_target)
 
   # Process vocabulary
   vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(
@@ -129,15 +134,8 @@ def main(unused_argv):
   # Build model
   # Switch between rnn_model and bag_of_words_model to test different models.
   model_fn = rnn_model
-  if FLAGS.bow_model:
-    # Subtract 1 because VocabularyProcessor outputs a word-id matrix where word
-    # ids start from 1 and 0 means 'no word'. But
-    # categorical_column_with_identity assumes 0-based count and uses -1 for
-    # missing word.
-    x_train -= 1
-    x_test -= 1
-    model_fn = bag_of_words_model
-  classifier = tf.estimator.Estimator(model_fn=model_fn)
+  
+  classifier = tf.estimator.Estimator(model_fn=model_fn, model_dir="/tmp/rnn_text_classification_model")
 
   # Train.
   train_input_fn = tf.estimator.inputs.numpy_input_fn(
@@ -152,6 +150,7 @@ def main(unused_argv):
   test_input_fn = tf.estimator.inputs.numpy_input_fn(
       x={WORDS_FEATURE: x_test}, y=y_test, num_epochs=1, shuffle=False)
   predictions = classifier.predict(input_fn=test_input_fn)
+
   y_predicted = np.array(list(p['class'] for p in predictions))
   y_predicted = y_predicted.reshape(np.array(y_test).shape)
 
@@ -166,15 +165,5 @@ def main(unused_argv):
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
-  parser.add_argument(
-      '--test_with_fake_data',
-      default=False,
-      help='Test the example code with fake data.',
-      action='store_true')
-  parser.add_argument(
-      '--bow_model',
-      default=False,
-      help='Run with BOW model instead of RNN.',
-      action='store_true')
   FLAGS, unparsed = parser.parse_known_args()
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
