@@ -13,12 +13,12 @@ import tensorflow as tf
 
 FLAGS = None
 
-MAX_DOCUMENT_LENGTH = 100
-EMBEDDING_SIZE = 50
+MAX_DOCUMENT_LENGTH = 15
+EMBEDDING_SIZE = 150
 n_words = 0
 MAX_LABEL = 20
 WORDS_FEATURE = 'words'  # Name of the input words feature.
-ROOT_PATH = "/vagrant"
+ROOT_PATH = "some_path"
 
 
 def estimator_spec_for_softmax_classification(logits, labels, mode):
@@ -78,8 +78,8 @@ def rnn_model(features, labels, mode):
       logits=logits, labels=labels, mode=mode)
 
 
-def load_data(data_directory, state):
-  data_path = os.path.join(data_directory, '20news-bydate-'+state)
+def load_data(data_directory, mode):
+  data_path = os.path.join(data_directory, '20news-bydate-'+mode)
 
   directories = [d for d in os.listdir(data_path) 
                if os.path.isdir(os.path.join(data_path, d))]
@@ -94,7 +94,7 @@ def load_data(data_directory, state):
                   for f in os.listdir(target_directory)]
 
     for f in file_names:
-      data.append(open(f, encoding="utf8", errors='ignore').read().replace("\n", ' '))
+      data.append(open(f, encoding="utf8", errors='ignore').read(-350).replace("\n", ' '))
       target.append(count)
 
     count = count + 1
@@ -111,8 +111,6 @@ def main(unused_argv):
   # Prepare training and testing data
   train_data, train_target = load_data(data_directory, 'train')
   test_data, test_target = load_data(data_directory, 'test')
-  # newsgroups = tf.contrib.learn.datasets.load_dataset(
-  #     'dbpedia', test_with_fake_data=FLAGS.test_with_fake_data)
   x_train = pandas.Series(train_data)
   y_train = pandas.Series(train_target)
   x_test = pandas.Series(test_data)
@@ -132,10 +130,9 @@ def main(unused_argv):
   print('Total words: %d' % n_words)
 
   # Build model
-  # Switch between rnn_model and bag_of_words_model to test different models.
   model_fn = rnn_model
   
-  classifier = tf.estimator.Estimator(model_fn=model_fn, model_dir="/tmp/rnn_text_classification_model")
+  classifier = tf.estimator.Estimator(model_fn=model_fn, model_dir=os.path.join(ROOT_PATH, "rnn_model"))
 
   # Train.
   train_input_fn = tf.estimator.inputs.numpy_input_fn(
