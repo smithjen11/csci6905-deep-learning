@@ -15,14 +15,13 @@ import random
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
-ROOT_PATH = "/vagrant"
+ROOT_PATH = "some_path"
 
 
 def cnn_model_fn(features, labels, mode):
   """Model function for CNN."""
   # Input Layer
   # Reshape X to 4-D tensor: [batch_size, width, height, channels]
-  # MNIST images are 28x28 pixels, and have one color channel
   input_layer = tf.reshape(features["x"], [-1, 28, 28, 3])
 
   # Convolutional Layer #1
@@ -81,7 +80,7 @@ def cnn_model_fn(features, labels, mode):
   # Logits layer
   # Input Tensor Shape: [batch_size, 1024]
   # Output Tensor Shape: [batch_size, 10]
-  logits = tf.layers.dense(inputs=dropout, units=101)
+  logits = tf.layers.dense(inputs=dropout, units=256)
 
   predictions = {
       # Generate predictions (for PREDICT and EVAL mode)
@@ -128,7 +127,7 @@ def load_training_data(data_directory):
                   if f.endswith(".jpg")]
 
     # Train on a subset of data
-    for f in file_names[:10]:
+    for f in file_names[:20]:
       images.append(skimage.data.imread(f))
       labels.append(count)
 
@@ -160,7 +159,7 @@ def load_eval_data(data_directory):
 
 def main(unused_argv):
   # Load training and eval data
-  data_directory = os.path.join(ROOT_PATH, "101_ObjectCategories")
+  data_directory = os.path.join(ROOT_PATH, "256_ObjectCategories")
   
   ## Training data
   images, labels = load_training_data(data_directory)
@@ -183,13 +182,13 @@ def main(unused_argv):
 
   # Create the Estimator
   classifier = tf.estimator.Estimator(
-      model_fn=cnn_model_fn, model_dir="/tmp/convnet_model")
+      model_fn=cnn_model_fn, model_dir=os.path.join(ROOT_PATH, "cnn_model6"))
 
   # Set up logging for predictions
   # Log the values in the "Softmax" tensor with label "probabilities"
   tensors_to_log = {"probabilities": "softmax_tensor"}
   logging_hook = tf.train.LoggingTensorHook(
-      tensors=tensors_to_log, every_n_iter=50)
+      tensors=tensors_to_log, every_n_iter=150)
 
   # Train the model
   train_input_fn = tf.estimator.inputs.numpy_input_fn(
@@ -200,7 +199,7 @@ def main(unused_argv):
       shuffle=True)
   classifier.train(
       input_fn=train_input_fn,
-      steps=20000,
+      steps=10000,
       hooks=[logging_hook])
 
   # Evaluate the model and print results
